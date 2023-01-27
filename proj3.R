@@ -1,5 +1,7 @@
 ################################################################################ initial set up
 ### installing packages
+remotes::install_github("renozao/xbioc") # dependency for SCDC
+devtools::install_github("meichendong/SCDC") # SCDC
 install.packages('hdf5r') # required for Read10X_h5 (called by LOAD10X_Spatial)
 ### loading libs
 library(dplyr)
@@ -7,6 +9,7 @@ library(Seurat)
 library(patchwork)
 library(future)
 library(ggplot2)
+library()
 ### checking pwd and changing it if necessary
 getwd()
 # change if necessary
@@ -320,7 +323,7 @@ ggsave('individualclusters1.jpg')
 rm(individualclusters2, s2p3)
 
 
-################################################################################ Week 3
+################################################################################ Week 2
 
 ###                               Task 4.1: DEG analysis based on the clustering
 
@@ -608,7 +611,7 @@ saveRDS(mouseSample1, 'mouseSample1_605.rds')
 saveRDS(mouseSample2, 'mouseSample2_606.rds')
 ## load if neccessary
 # mouseSample1 <- readRDS('mouseSample1_605.rds')
-# mouseSample1 <- readRDS('mouseSample2_606.rds')
+# mouseSample2 <- readRDS('mouseSample2_606.rds')
 # plotting
 spatiallyVariableFeaturesS1 <- SpatialFeaturePlot(mouseSample1, 
                                                  features = top.features,
@@ -679,7 +682,10 @@ rm(mergedPlot_noBC)
 saveRDS(mouseSample.merge, file = 'mouseSample_merge.rds')
 # clear memory
 rm(mouseSample.merge)
-
+## load if necessary
+# mouseSample.merge <- readRDS('mouseSample_merge.rds')
+merge <- SpatialDimPlot(mouseSample.merge, label = T)
+merge + s1p2 + s2p2
 # TODO: check elbow plots
 ###                                      Task 5.2: Merging with Batch Correction
 mouseSample1 <- SCTransform(mouseSample1,
@@ -698,24 +704,24 @@ saveRDS(mouseSample2, 'mouseSample2_692.rds')
 
 # finding integration anchors and integrating by them
 anchors <- FindIntegrationAnchors(object.list = c(mouseSample1, mouseSample2))
-mouseMerged_noBC <- IntegrateData(anchorset = anchors)
+mouseMerged_BC <- IntegrateData(anchorset = anchors)
 # Save original samples and clear memory
 rm(anchors)
 saveRDS(mouseSample1, 'mouseSample1_691.rds')
 rm(mouseSample1)
 saveRDS(mouseSample2, 'mouseSample2_692.rds')
 rm(mouseSample2)
-saveRDS(mouseMerged_noBC, 'mouseMerged_noBC.rds')
+saveRDS(mouseMerged_BC, 'mouseMerged_BC.rds')
 ## integrated analysis
 ## load if necessary
-# mouseMerged_noBC <- readRDS('mouseMerged_noBC.rds')
+# mouseMerged_BC <- readRDS('mouseMerged_BC.rds')
 # Pre-processing.
-mouseMerged <- FindSpatiallyVariableFeatures(mouseMerged, 
+mouseMerged_BC <- FindSpatiallyVariableFeatures(mouseMerged_BC, 
                                               assay = 'Spatial',
-                                              features = VariableFeatures(mouseMerged)[1:100],
+                                              features = VariableFeatures(mouseMerged_BC)[1:100],
                                               selection.method = 'markvariogram')
 # save and load
-saveRDS(mouseMerged, 'mouseMerge_BC_716.rds')
+saveRDS(mouseMerged_BC, 'mouseMerge_BC_716.rds')
 mouseMerged_BC <- readRDS('mouseMerge_BC_716.rds')
 
 ## Pre-Processing
@@ -747,24 +753,64 @@ rm(mergedPlot_BC)
 ###                                         Task 5.3: Detection of Batch Effects
 # TODO: hace un plot de los clusters sobre la imagen, un vln, quizas un volcano para
 # comparar bc vs nobc, y obviamente los PCA y UMAps
-mergedPlot_noBC <- readRDS('mouseMerged_noBC.rds')
+mergedSample.merge <- readRDS('mouseSample_merged.rds')
+mouseMerged_BC <- readRDS('mouseMerged_BC.rds')
+
+# noBC
+vln_noBC <- VlnPlot(mouseSample.merge, features = 'nCount_Spatial') + 
+  NoLegend() +   ggtitle('not Batch Corrected') + 
+  theme(plot.title = element_text(face = 'bold'))
+
+# sample 2
+vln_BC <- VlnPlot(mouseMerged_BC, features = 'nCount_Spatial') + 
+  NoLegend() + ggtitle('Batch Corrected') + 
+  theme(plot.title = element_text(face = 'bold')) 
+
+batch_effect <- vln_BC / vln_noBC
+
+ggsave(batch_effect, 'batch_effect.jpg')
 
 ################################################################################ Week 3
 
 ###                        Task 6.1: Automatic Annotation Using Data Integration
-
-
+allenallen_reference <- readRDS('allen_cortex(1).rds')
+# pre processing
+allen_reference <- SCTransform(allen_reference, ncells = 3000, verbose = FALSE) %>%
+  RunPCA(verbose = FALSE) %>%
+  RunUMAP(dims = 1:30)
+cortex <- SCTransform(cortex, assay = "Spatial", verbose = FALSE) %>%
+  RunPCA(verbose = FALSE)
+DimPlot(allen_reference, group.by = "subclass", label = TRUE)
+# integrating
+anchors <- FindTransferAnchors(reference = allen_reference, 
+                               query = mouseMerged_BC, 
+                               normalization.method = "SCT")
+predictions.assay <- TransferData(anchorset = anchors, 
+                                  refdata = allen_reference$subclass, 
+                                  prediction.assay = TRUE,
+                                  weight.reduction = mouseMerged_BC[["pca"]], dims = 1:30)
+mouseMerged_BC[["predictions"]] <- predictions.assay
+# Display Predictions
+DefaultAssay(cortex) <- "predictions"
+SpatialFeaturePlot(cortex, features = c("L2/3 IT", "L4"), pt.size.factor = 1.6, ncol = 2, crop = TRUE)
 ###                                                  Task 6.2: Manual Annotation
+
 
 ###                                                      Task 7.0: Deconvolution
 
+
 ###                                         Task 7.1: Prepare the Reference Data
+
+
 
 ###                                     Task 7.2: Select Genes for Deconvolution
 
+
 ###                                     Task 7.3: Create an ExpressionSet-Object
 
+
 ###                                     Task 7.4: Perform Deconvolution
+
 
 ################################################################################  Week 4
 
